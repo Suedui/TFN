@@ -75,6 +75,14 @@ def parse_args():
     parser.add_argument('--rl_tau', type=float, default=0.01, help='soft update factor for the target network')
     parser.add_argument('--shrinkage_init', type=float, default=0.1,
                         help='initial threshold for the soft shrinkage module')
+    parser.add_argument('--use_wavelet', type=mybool, default="True",
+                        help='Enable Wavelet Shrinkage layer (set False for standard Conv1d)')
+    parser.add_argument('--use_rl', type=mybool, default="True",
+                        help='Enable D3QN reinforcement learning for wavelet selection')
+    parser.add_argument('--use_denoising', type=mybool, default="True",
+                        help='Enable soft-threshold denoising after convolution')
+    parser.add_argument('--fixed_wavelet', type=str, default='morlet',
+                        help='Wavelet type to use when reinforcement learning is disabled')
 
     # optimization information
     parser.add_argument('--opt', type=str, choices=['sgd', 'adam', 'RMSprop'], default='adam', help='the optimizer')

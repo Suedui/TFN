@@ -16,6 +16,7 @@ from collections import deque
 from typing import Dict, List, Optional, Sequence
 
 import random
+import warnings
 
 import torch
 from torch import Tensor, nn
@@ -203,6 +204,9 @@ class WaveletShrinkageConv1d(nn.Module):
         agent_epsilon_decay: float = 0.995,
         agent_tau: float = 0.01,
         threshold_init: float = 0.1,
+        use_rl: bool = True,
+        use_denoising: bool = True,
+        fixed_wavelet: str = "morlet",
     ) -> None:
         super().__init__()
 
@@ -219,6 +223,9 @@ class WaveletShrinkageConv1d(nn.Module):
         self.padding = padding
         self.wavelet_types = tuple(w.lower() for w in wavelet_types)
         self.num_wavelets = len(self.wavelet_types)
+        self.use_rl = bool(use_rl)
+        self.use_denoising = bool(use_denoising)
+        self.fixed_wavelet = fixed_wavelet.lower() if fixed_wavelet is not None else None
 
         # Wavelet scale parameters grouped into a single learnable tensor for compatibility
         self.superparams = nn.Parameter(torch.ones(out_channels, in_channels, self.num_wavelets))
@@ -231,19 +238,34 @@ class WaveletShrinkageConv1d(nn.Module):
         self.register_buffer("time_grid", time_grid)
 
         state_dim = in_channels * 2  # mean & std per channel
-        self.agent = D3QNAgent(
-            state_dim=state_dim,
-            action_dim=self.num_wavelets,
-            hidden_dim=agent_hidden,
-            gamma=agent_gamma,
-            buffer_size=agent_buffer_size,
-            batch_size=agent_batch_size,
-            lr=agent_lr,
-            epsilon_start=agent_epsilon_start,
-            epsilon_end=agent_epsilon_end,
-            epsilon_decay=agent_epsilon_decay,
-            tau=agent_tau,
-        )
+        if self.use_rl:
+            self.agent = D3QNAgent(
+                state_dim=state_dim,
+                action_dim=self.num_wavelets,
+                hidden_dim=agent_hidden,
+                gamma=agent_gamma,
+                buffer_size=agent_buffer_size,
+                batch_size=agent_batch_size,
+                lr=agent_lr,
+                epsilon_start=agent_epsilon_start,
+                epsilon_end=agent_epsilon_end,
+                epsilon_decay=agent_epsilon_decay,
+                tau=agent_tau,
+            )
+            self.register_buffer("fixed_action", torch.tensor(0, dtype=torch.long))
+        else:
+            self.agent = None
+            if self.fixed_wavelet and self.fixed_wavelet in self.wavelet_types:
+                fixed_idx = self.wavelet_types.index(self.fixed_wavelet)
+            else:
+                fixed_idx = 0
+                if self.fixed_wavelet and self.fixed_wavelet not in self.wavelet_types:
+                    warnings.warn(
+                        f"fixed_wavelet '{self.fixed_wavelet}' not in available types {self.wavelet_types}; "
+                        f"defaulting to '{self.wavelet_types[fixed_idx]}'",
+                        RuntimeWarning,
+                    )
+            self.register_buffer("fixed_action", torch.tensor(fixed_idx, dtype=torch.long))
 
         self.agent_cache: Optional[Dict[str, Tensor]] = None
         self.last_actions: Optional[Tensor] = None
@@ -251,7 +273,8 @@ class WaveletShrinkageConv1d(nn.Module):
     def extra_repr(self) -> str:
         return (
             f"wavelets={self.wavelet_types}, kernel_size={self.kernel_size}, "
-            f"out_channels={self.out_channels}, stride={self.stride}, padding={self.padding}"
+            f"out_channels={self.out_channels}, stride={self.stride}, padding={self.padding}, "
+            f"use_rl={self.use_rl}, use_denoising={self.use_denoising}"
         )
 
     def _wavelet_kernel(self, wavelet_idx: int) -> Tensor:
@@ -305,15 +328,22 @@ class WaveletShrinkageConv1d(nn.Module):
         batch_size, _, seq_len = conv_all.shape
         conv_all = conv_all.view(batch_size, self.num_wavelets, self.out_channels, seq_len)
 
-        states = self._build_state(input_tensor)
-        actions = self.agent.select_action(states, training=self.training)
+        if self.use_rl:
+            states = self._build_state(input_tensor)
+            actions = self.agent.select_action(states, training=self.training)
+        else:
+            actions = self.fixed_action.expand(batch_size).to(input_tensor.device)
+            states = None
         one_hot = F.one_hot(actions, num_classes=self.num_wavelets).view(batch_size, self.num_wavelets, 1, 1)
         selected = (conv_all * one_hot).sum(dim=1)
 
-        thresh = _softplus_positive(self.threshold).view(1, -1, 1)
-        shrunk = torch.sign(selected) * F.relu(selected.abs() - thresh)
+        if self.use_denoising:
+            thresh = _softplus_positive(self.threshold).view(1, -1, 1)
+            output = torch.sign(selected) * F.relu(selected.abs() - thresh)
+        else:
+            output = selected
 
-        if self.training:
+        if self.training and self.use_rl:
             pooled = F.adaptive_avg_pool1d(selected.detach(), 1).view(batch_size, -1)
             self.agent_cache = {
                 "states": states.detach(),
@@ -324,9 +354,12 @@ class WaveletShrinkageConv1d(nn.Module):
             self.agent_cache = None
 
         self.last_actions = actions.detach()
-        return shrunk
+        return output
 
     def update_agent(self, reward: float, done: bool = False, loss: Optional[float] = None) -> None:
+        if not self.use_rl or self.agent is None:
+            return
+
         if not self.training or self.agent_cache is None:
             return
 

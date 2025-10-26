@@ -121,21 +121,40 @@ class TFN_WaveletRL(Base_FUNC_CNN):
                  agent_hidden=128, agent_gamma=0.98, agent_buffer_size=2048,
                  agent_batch_size=64, agent_lr=1e-3, agent_epsilon_start=1.0,
                  agent_epsilon_end=0.05, agent_epsilon_decay=0.995, agent_tau=0.01,
-                 threshold_init=0.1, **kwargs):
+                 threshold_init=0.1, use_wavelet: bool = True, use_rl: bool = True,
+                 use_denoising: bool = True, fixed_wavelet: str = 'morlet', **kwargs):
         self.funckernel_size = mid_channel * 2 - 1
-        self.funconv_kwargs = dict(
-            wavelet_types=wavelet_types,
-            agent_hidden=agent_hidden,
-            agent_gamma=agent_gamma,
-            agent_buffer_size=agent_buffer_size,
-            agent_batch_size=agent_batch_size,
-            agent_lr=agent_lr,
-            agent_epsilon_start=agent_epsilon_start,
-            agent_epsilon_end=agent_epsilon_end,
-            agent_epsilon_decay=agent_epsilon_decay,
-            agent_tau=agent_tau,
-            threshold_init=threshold_init,
-        )
+        use_wavelet = bool(use_wavelet)
+        use_rl = bool(use_rl) if use_wavelet else False
+        use_denoising = bool(use_denoising) if use_wavelet else False
+
+        if use_wavelet:
+            self.FuncConv1d = WaveletShrinkageConv1d
+            self.funconv_kwargs = dict(
+                wavelet_types=wavelet_types,
+                agent_hidden=agent_hidden,
+                agent_gamma=agent_gamma,
+                agent_buffer_size=agent_buffer_size,
+                agent_batch_size=agent_batch_size,
+                agent_lr=agent_lr,
+                agent_epsilon_start=agent_epsilon_start,
+                agent_epsilon_end=agent_epsilon_end,
+                agent_epsilon_decay=agent_epsilon_decay,
+                agent_tau=agent_tau,
+                threshold_init=threshold_init,
+                use_rl=use_rl,
+                use_denoising=use_denoising,
+                fixed_wavelet=fixed_wavelet,
+            )
+        else:
+            self.FuncConv1d = Random_conv
+            self.funconv_kwargs = {}
+
+        self.use_wavelet = use_wavelet
+        self.use_rl = use_rl
+        self.use_denoising = use_denoising
+        self.fixed_wavelet = fixed_wavelet
+
         super().__init__(mid_channel=mid_channel, **kwargs)
 
 
