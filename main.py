@@ -51,7 +51,8 @@ def parse_args():
 
     # models parameters
     parser.add_argument('--model_name', type=str, default='TFN_STTF',
-                        choices=["Backbone_CNN", "Random_CNN", "TFN_STTF", "TFN_Chirplet", "TFN_Morlet"],
+                        choices=["Backbone_CNN", "Random_CNN", "TFN_STTF", "TFN_Chirplet", "TFN_Morlet",
+                                 "TFN_WaveletRL"],
                         help='the model to be trained')
     parser.add_argument('--kernel_size', type=int, default=11, help='the kernel size of traditional conv layer')
     parser.add_argument('--checkpoint_dir', type=str, default=r'./checkpoint',
@@ -60,6 +61,20 @@ def parse_args():
     # func-models parameters
     parser.add_argument('--mid_channel', type=int, default=32, help='the channel number of preprocessing layer')
     parser.add_argument('--clamp_flag', type=mybool, default="True", help='flag to limit the superparams of TFconv layer')
+    parser.add_argument('--wavelet_types', type=str, default='morlet,mexhat,laplace',
+                        help='comma separated analytic wavelet types for TFN_WaveletRL')
+    parser.add_argument('--rl_hidden', type=int, default=128, help='hidden size of the D3QN agent (TFN_WaveletRL)')
+    parser.add_argument('--rl_gamma', type=float, default=0.98, help='discount factor for the D3QN agent')
+    parser.add_argument('--rl_buffer_size', type=int, default=2048, help='experience buffer size for D3QN agent')
+    parser.add_argument('--rl_batch_size', type=int, default=64, help='mini-batch size for agent updates')
+    parser.add_argument('--rl_lr', type=float, default=1e-3, help='learning rate of the D3QN agent')
+    parser.add_argument('--rl_epsilon_start', type=float, default=1.0, help='initial epsilon for exploration')
+    parser.add_argument('--rl_epsilon_end', type=float, default=0.05, help='minimum epsilon for exploration')
+    parser.add_argument('--rl_epsilon_decay', type=float, default=0.995,
+                        help='multiplicative epsilon decay applied each step')
+    parser.add_argument('--rl_tau', type=float, default=0.01, help='soft update factor for the target network')
+    parser.add_argument('--shrinkage_init', type=float, default=0.1,
+                        help='initial threshold for the soft shrinkage module')
 
     # optimization information
     parser.add_argument('--opt', type=str, choices=['sgd', 'adam', 'RMSprop'], default='adam', help='the optimizer')
