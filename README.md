@@ -7,6 +7,7 @@ This is the open code of paper entitled **"TFN: An Interpretable Neural Network 
 
 ### Notes
 
+* **(Apr 2024)** Added a wavelet shrinkage front-end with D3QN-driven kernel selection (`TFN_WaveletRL`) together with FG-CAM visualisation utilities for frequency-domain interpretability;
 * **(Dec 25, 2023)** An extra-supplimentary material about the interpretability is added in `./Doc` directory: [SupplimentaryMaterial.pptx](./Doc/ExtraSupplimentaryMaterial.pptx) (Highly recommended to read);
 * **(Nov 14, 2023)** The final version is published on [Mechanical System and Signal Processing (MSSP)](https://www.sciencedirect.com/science/article/pii/S0888327023008609);
 * **(Jun 19, 2023)** The preprint version is available on [Arxiv](https://arxiv.org/abs/2209.01992);
@@ -21,8 +22,8 @@ Besides, I realize the difficulty for a beginer to reproduce other works. To hel
 The repo structure is organized as follows:
 * `checkpoint`: storage of training results;
 * `Datasets`: code of dataset preparation (CWRU included only);
-* `Models`: code of models (Backbon-CNN, Random-CNN, TFN-STTF, TFN-Chirplet, TFN-Morlet included);
-* `PostProcess`: A full pipeline to conduct the accuracy experiments on CWRU dataset, including **`PostProcess/TrainSequentially.py`** (train models sequentially) and  **`PostProcess/Acc_statistic.py`**: (statistic and plot the results);
+* `Models`: code of models (Backbon-CNN, Random-CNN, TFN-STTF, TFN-Chirplet, TFN-Morlet and the new `TFN_WaveletRL` with D3QN-controlled wavelet shrinkage);
+* `PostProcess`: A full pipeline to conduct the accuracy experiments on CWRU dataset, including **`PostProcess/TrainSequentially.py`** (train models sequentially) and  **`PostProcess/Acc_statistic.py`**: (statistic and plot the results); `PostProcess/fg_cam.py` provides FG-CAM visualisation helpers for frequency-domain interpretability;
 * `utils`: basic functions;
 * **`main.py`**: the main file.
 
@@ -69,6 +70,7 @@ conda install pandas matplotlib seaborn scipy scikit-learn openpyxl
 
 * Download CWRU dataset and set the dataset directory rightly in `main.py`
 * Run the `main.py`  ( for example:  `python main.py --data_dir <CWRU dir>` )
+* To enable the adaptive wavelet shrinkage version run `python main.py --model_name TFN_WaveletRL --wavelet_types morlet,mexhat,laplace --data_dir <CWRU dir>` and optionally tune the reinforcement learning related flags (`--rl_*`) and the shrinkage threshold (`--shrinkage_init`).
 * In addition, you can customize the training args by editing `main.py`. (choose different models, different channel numbers of preprocess layer, etc.)
 
 

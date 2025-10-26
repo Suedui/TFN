@@ -73,9 +73,32 @@ class train_utils(object):
         logging.info(f"dataset_train:{len(self.datasets['train']):d}, dataset_train:{len(self.datasets['val']):d}")
 
         # Define the models
-        self.model = getattr(Models, args.model_name) \
-            (in_channels=dataset.inputchannel, out_channels=dataset.num_classes, kernel_size=args.kernel_size,
-             clamp_flag=args.clamp_flag, mid_channel=args.mid_channel)
+        model_cls = getattr(Models, args.model_name)
+        model_kwargs = dict(
+            in_channels=dataset.inputchannel,
+            out_channels=dataset.num_classes,
+            kernel_size=args.kernel_size,
+            clamp_flag=args.clamp_flag,
+            mid_channel=args.mid_channel,
+        )
+        if args.model_name == 'TFN_WaveletRL':
+            wavelet_types = [item.strip().lower() for item in args.wavelet_types.split(',') if item.strip()]
+            if len(wavelet_types) == 0:
+                wavelet_types = ("morlet", "mexhat", "laplace")
+            model_kwargs.update(
+                wavelet_types=wavelet_types,
+                agent_hidden=args.rl_hidden,
+                agent_gamma=args.rl_gamma,
+                agent_buffer_size=args.rl_buffer_size,
+                agent_batch_size=args.rl_batch_size,
+                agent_lr=args.rl_lr,
+                agent_epsilon_start=args.rl_epsilon_start,
+                agent_epsilon_end=args.rl_epsilon_end,
+                agent_epsilon_decay=args.rl_epsilon_decay,
+                agent_tau=args.rl_tau,
+                threshold_init=args.shrinkage_init,
+            )
+        self.model = model_cls(**model_kwargs)
         self.model.to(self.device)
 
         # summary the model and record model info
@@ -157,6 +180,7 @@ class train_utils(object):
                     self.model.eval()
 
                 # batch-wise training or testing
+                num_batches = len(self.dataloaders[phase])
                 for batch_idx, (inputs, labels) in enumerate(self.dataloaders[phase]):
                     inputs = inputs.to(self.device)
                     labels = labels.to(self.device)
@@ -175,6 +199,13 @@ class train_utils(object):
                         if epoch == args.max_epoch - 1:
                             for i, j in zip(labels.detach().cpu().numpy(), pred.detach().cpu().numpy()):
                                 self.c_matrix[phase][i][j] += 1
+
+                        # reinforcement learning feedback for adaptive layers
+                        if hasattr(self.model, 'update_reinforcement'):
+                            reward = float(correct) / float(inputs.size(0))
+                            done_flag = (batch_idx == num_batches - 1)
+                            self.model.update_reinforcement(reward=reward, loss=loss.item(), done=done_flag,
+                                                            phase=phase)
 
                         # Calculate the training information
                         if phase == 'train':
@@ -212,6 +243,9 @@ class train_utils(object):
                 logging.info('<info> Epoch: {} {}-Loss: {:.4f} {}-Acc: {:.4f}, Cost {:.4f} sec'.format(
                     epoch, phase, epoch_loss, phase, epoch_acc * 100, time.time() - epoch_start
                 ))
+
+                if hasattr(self.model, 'on_epoch_end'):
+                    self.model.on_epoch_end(phase=phase)
 
                 # Record the epoch information
                 self.Records["%s_loss" % phase].append(epoch_loss)
