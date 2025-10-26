@@ -97,6 +97,10 @@ class train_utils(object):
                 agent_epsilon_decay=args.rl_epsilon_decay,
                 agent_tau=args.rl_tau,
                 threshold_init=args.shrinkage_init,
+                use_wavelet=args.use_wavelet,
+                use_rl=args.use_rl,
+                use_denoising=args.use_denoising,
+                fixed_wavelet=args.fixed_wavelet,
             )
         self.model = model_cls(**model_kwargs)
         self.model.to(self.device)
@@ -151,7 +155,7 @@ class train_utils(object):
         step_start = time.time()
 
         self.Records = {"train_loss": [], "train_acc": [], "val_loss": [], "val_acc": [],
-                        "best_epoch": 0}  # epoch-wise records
+                        "train_time": [], "val_time": [], "best_epoch": 0}  # epoch-wise records
         self.MinorRecords = {"train_loss": [], "train_acc": []}  # batch-wise records
 
         # Train the models via epochs
@@ -240,9 +244,14 @@ class train_utils(object):
                 # Print the epoch information during the end of each epoch (both train and val)
                 epoch_loss = epoch_loss / len(self.dataloaders[phase].dataset)
                 epoch_acc = epoch_acc / len(self.dataloaders[phase].dataset)
+                phase_time = time.time() - epoch_start
                 logging.info('<info> Epoch: {} {}-Loss: {:.4f} {}-Acc: {:.4f}, Cost {:.4f} sec'.format(
-                    epoch, phase, epoch_loss, phase, epoch_acc * 100, time.time() - epoch_start
+                    epoch, phase, epoch_loss, phase, epoch_acc * 100, phase_time
                 ))
+
+                time_key = f"{phase}_time"
+                if time_key in self.Records:
+                    self.Records[time_key].append(phase_time)
 
                 if hasattr(self.model, 'on_epoch_end'):
                     self.model.on_epoch_end(phase=phase)
@@ -296,6 +305,9 @@ class train_utils(object):
                                                                  self.Records['val_acc'].max()) \
                + "final train acc: %.6f\n final val acc: %.6f\n" \
                % (self.Records['train_acc'][-final_len:].mean(), self.Records['val_acc'][-final_len:].mean())
+        if self.Records['train_time'].size > 0:
+            total_train_time = float(self.Records['train_time'].sum())
+            info += "total train time (s): %.4f\n" % total_train_time
         for item in info.split('\n'):
             logging.info(item)
         with open(os.path.join(self.save_dir, 'acc output.txt'), 'w') as f:
